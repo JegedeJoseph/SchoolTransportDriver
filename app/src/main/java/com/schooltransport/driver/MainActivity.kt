@@ -11,8 +11,11 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import com.schooltransport.driver.database.DriverDatabase
+import com.schooltransport.driver.database.DriverEvent
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.Executors
 
 class MainActivity : Activity() {
 
@@ -22,22 +25,32 @@ class MainActivity : Activity() {
     }
 
     private data class DemoStudent(
+        val id: String,
         val name: String,
         var pickedUp: Boolean = false,
         var droppedOff: Boolean = false
     )
 
     // Default school closing time: 2:00 PM.
-    // This will eventually come from the owner's admin settings.
+    // Owner-configurable settings will be added separately.
     private val schoolClosingTime = LocalTime.of(14, 0)
 
     private var tripMode = TripMode.MORNING_PICKUP
 
     private val students = mutableListOf(
-        DemoStudent("Demo Student 01"),
-        DemoStudent("Demo Student 02"),
-        DemoStudent("Demo Student 03")
+        DemoStudent("DEMO_001", "Demo Student 01"),
+        DemoStudent("DEMO_002", "Demo Student 02"),
+        DemoStudent("DEMO_003", "Demo Student 03")
     )
+
+    private lateinit var driverDatabase: DriverDatabase
+
+    private val databaseExecutor = Executors.newSingleThreadExecutor()
+
+    private val savingStudentIds = mutableSetOf<String>()
+
+    private var eventsLoaded = false
+    private var pendingEventCount = 0
 
     private val handler = Handler(Looper.getMainLooper())
 
@@ -53,7 +66,11 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        driverDatabase = DriverDatabase.getDatabase(this)
+
         renderScreen()
+        loadSavedEvents()
     }
 
     override fun onResume() {
@@ -69,6 +86,145 @@ class MainActivity : Activity() {
 
     private fun isDropoffAvailable(): Boolean {
         return !LocalTime.now().isBefore(schoolClosingTime)
+    }
+
+    // Restore student statuses from saved database events.
+    private fun loadSavedEvents() {
+
+        databaseExecutor.execute {
+            try {
+                val events = driverDatabase
+                    .driverEventDao()
+                    .getAllEvents()
+
+                val pendingCount = driverDatabase
+                    .driverEventDao()
+                    .getPendingCount()
+
+                runOnUiThread {
+
+                    students.forEach { student ->
+                        student.pickedUp = false
+                        student.droppedOff = false
+
+                        val studentEvents = events.filter {
+                            it.studentId == student.id
+                        }
+
+                        if (studentEvents.any {
+                                it.eventType == "PICKUP"
+                            }) {
+                            student.pickedUp = true
+                        }
+
+                        if (studentEvents.any {
+                                it.eventType == "DROPOFF"
+                            }) {
+                            student.droppedOff = true
+                        }
+                    }
+
+                    pendingEventCount = pendingCount
+                    eventsLoaded = true
+
+                    renderScreen()
+                }
+
+            } catch (exception: Exception) {
+
+                runOnUiThread {
+                    Toast.makeText(
+                        this,
+                        "Could not load saved events: ${exception.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
+    }
+
+    // Save a pickup or drop-off event permanently on the phone.
+    private fun recordEvent(
+        student: DemoStudent,
+        eventType: String
+    ) {
+
+        if (!eventsLoaded || student.id in savingStudentIds) {
+            return
+        }
+
+        if (eventType == "PICKUP" && student.pickedUp) {
+            return
+        }
+
+        if (eventType == "DROPOFF" &&
+            (!student.pickedUp || student.droppedOff)
+        ) {
+            return
+        }
+
+        savingStudentIds.add(student.id)
+        renderScreen()
+
+        val event = DriverEvent(
+            studentId = student.id,
+            studentName = student.name,
+            eventType = eventType,
+            latitude = null,
+            longitude = null,
+            gpsAccuracy = null,
+            eventTimestamp = System.currentTimeMillis(),
+            syncStatus = "PENDING"
+        )
+
+        databaseExecutor.execute {
+
+            try {
+                driverDatabase
+                    .driverEventDao()
+                    .insertEvent(event)
+
+                val pendingCount = driverDatabase
+                    .driverEventDao()
+                    .getPendingCount()
+
+                runOnUiThread {
+
+                    savingStudentIds.remove(student.id)
+
+                    if (eventType == "PICKUP") {
+                        student.pickedUp = true
+                    } else {
+                        student.droppedOff = true
+                    }
+
+                    pendingEventCount = pendingCount
+
+                    Toast.makeText(
+                        this,
+                        "$eventType saved on this phone",
+                        Toast.LENGTH_SHORT
+                    ).show()
+
+                    renderScreen()
+                }
+
+            } catch (exception: Exception) {
+
+                runOnUiThread {
+
+                    savingStudentIds.remove(student.id)
+
+                    Toast.makeText(
+                        this,
+                        "Could not save event: ${exception.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    renderScreen()
+                }
+            }
+        }
     }
 
     private fun renderScreen() {
@@ -147,6 +303,17 @@ class MainActivity : Activity() {
             true
         )
 
+        addText(
+            content,
+            "Events waiting to sync: $pendingEventCount",
+            16f,
+            true
+        )
+
+        if (!eventsLoaded) {
+            addText(content, "Loading saved records...", 15f, false)
+        }
+
         addText(content, "Student List", 22f, true)
 
         students.forEach { student ->
@@ -161,47 +328,36 @@ class MainActivity : Activity() {
 
             addText(content, "Status: $status", 15f, false)
 
+            val isSaving = student.id in savingStudentIds
+
             if (tripMode == TripMode.MORNING_PICKUP) {
 
                 addButton(
                     content,
-                    "Confirm Pickup",
-                    !student.pickedUp
+                    if (isSaving) "Saving pickup..." else "Confirm Pickup",
+                    eventsLoaded && !student.pickedUp && !isSaving
                 ) {
-                    student.pickedUp = true
-
-                    Toast.makeText(
-                        this,
-                        "Demo pickup recorded locally",
-                        Toast.LENGTH_SHORT
-                    ).show()
-
-                    renderScreen()
+                    recordEvent(student, "PICKUP")
                 }
 
             } else {
 
                 addButton(
                     content,
-                    "Confirm Drop-off",
-                    student.pickedUp && !student.droppedOff
+                    if (isSaving) "Saving drop-off..." else "Confirm Drop-off",
+                    eventsLoaded &&
+                        student.pickedUp &&
+                        !student.droppedOff &&
+                        !isSaving
                 ) {
-                    student.droppedOff = true
-
-                    Toast.makeText(
-                        this,
-                        "Demo drop-off recorded locally",
-                        Toast.LENGTH_SHORT
-                    ).show()
-
-                    renderScreen()
+                    recordEvent(student, "DROPOFF")
                 }
             }
         }
 
         addText(
             content,
-            "Demo actions are not yet saved permanently, GPS-verified, or sent to parents.",
+            "Events are saved locally. GPS verification and server synchronisation have not yet been implemented.",
             14f,
             false
         )
@@ -213,6 +369,7 @@ class MainActivity : Activity() {
         size: Float,
         bold: Boolean
     ) {
+
         val view = TextView(this).apply {
             this.text = text
             textSize = size
@@ -240,6 +397,7 @@ class MainActivity : Activity() {
         enabled: Boolean = true,
         action: () -> Unit
     ) {
+
         val button = Button(this).apply {
             text = label
             isEnabled = enabled
