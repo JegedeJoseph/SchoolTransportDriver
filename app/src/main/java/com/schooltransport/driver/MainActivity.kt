@@ -47,6 +47,7 @@ class MainActivity : Activity() {
     // Default school closing time: 2:00 PM.
     // Owner-configurable settings will be added separately.
     private val schoolClosingTime = LocalTime.of(14, 0)
+    private val pickupCutoffTime = LocalTime.of(12, 0)
 
     private var tripMode = TripMode.MORNING_PICKUP
 
@@ -54,20 +55,20 @@ class MainActivity : Activity() {
     DemoStudent(
         "DEMO_001",
         "Demo Student 01",
-        6.5244,
-        3.3792
+        6.5856348,
+        3.5981975
     ),
     DemoStudent(
         "DEMO_002",
         "Demo Student 02",
-        6.5244,
-        3.3792
+        6.587041,
+        3.597996
     ),
     DemoStudent(
         "DEMO_003",
         "Demo Student 03",
-        6.5244,
-        3.3792
+        6.586142,
+        3.598720
     )
 )
 
@@ -101,6 +102,9 @@ class MainActivity : Activity() {
     private val geofenceRadiusMeters = 100f
     private val maxLocationAgeMillis = 30_000L
 
+    private fun isPickupAvailable(): Boolean {
+    return LocalTime.now().isBefore(pickupCutoffTime)
+}
     private val timeFormatter =
         DateTimeFormatter.ofPattern("h:mm a")
 
@@ -255,12 +259,19 @@ class MainActivity : Activity() {
     // Save a pickup or drop-off event permanently on the phone.
     private fun recordEvent(student: DemoStudent, eventType: String) {
         if (!eventsLoaded || student.id in savingStudentIds) return
+                
+        if (eventType == "PICKUP" && !isPickupAvailable()) {
+            Toast.makeText(
+                this,
+                "Student pickup is closed after 12:00 PM.",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
 
         if (eventType == "PICKUP" && student.pickedUp) return
 
-        if (eventType == "DROPOFF" &&
-            (!student.pickedUp || student.droppedOff)
-        ) return
+        if (eventType == "DROPOFF" && student.droppedOff) return
 
         if (!hasLocationPermission()) {
             pendingStudent = student
@@ -429,13 +440,25 @@ class MainActivity : Activity() {
 
         addText(content, "Today's Trip", 22f, true)
 
-        addButton(
-            content,
-            "Morning: Student Pickup",
-            true
-        ) {
-            tripMode = TripMode.MORNING_PICKUP
-            renderScreen()
+        val pickupAvailable = isPickupAvailable()
+
+        val pickupButtonText = if (pickupAvailable) {
+            "Morning: Student Pickup"
+        } else {
+            "Morning: Student Pickup (Closed at 12:00 PM)"
+        }
+
+        addButton(content, pickupButtonText, pickupAvailable) {
+            if (isPickupAvailable()) {
+                tripMode = TripMode.MORNING_PICKUP
+                renderScreen()
+            } else {
+                Toast.makeText(
+                    this,
+                    "Student pickup is closed after 12:00 PM.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
         }
 
         val dropoffAvailable = isDropoffAvailable()
@@ -453,6 +476,7 @@ class MainActivity : Activity() {
         ) {
             if (isDropoffAvailable()) {
                 tripMode = TripMode.AFTERNOON_DROPOFF
+        
                 renderScreen()
             } else {
                 Toast.makeText(
@@ -522,15 +546,14 @@ class MainActivity : Activity() {
 
             } else {
 
-                addButton(
-                    content,
-                    if (isSaving) "Saving drop-off..." else "Confirm Drop-off",
-                    eventsLoaded &&
-                        student.pickedUp &&
-                        !student.droppedOff &&
-                        !isSaving
-                ) {
-                    recordEvent(student, "DROPOFF")
+            addButton(
+                content,
+                if (isSaving) "Saving drop-off..." else "Confirm Drop-off",
+                eventsLoaded &&
+                    !student.droppedOff &&
+                    !isSaving
+            ) {
+                recordEvent(student, "DROPOFF")
                 }
             }
         }
