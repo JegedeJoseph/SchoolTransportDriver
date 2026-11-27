@@ -20,6 +20,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import android.Manifest
+import android.content.pm.PackageManager
+import android.location.Location
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
+import com.google.android.gms.tasks.CancellationTokenSource
 
 class MainActivity : Activity() {
 
@@ -66,6 +73,13 @@ class MainActivity : Activity() {
         }
     }
 
+    private lateinit var fusedLocationClient: FusedLocationProviderClient
+
+    private val LOCATION_PERMISSION_REQUEST_CODE = 1001
+
+    private var pendingStudent: DemoStudent? = null
+    private var pendingEventType: String? = null
+
     private val timeFormatter =
         DateTimeFormatter.ofPattern("h:mm a")
 
@@ -73,6 +87,7 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
 
         driverDatabase = DriverDatabase.getDatabase(this)
+        fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
 
         renderScreen()
         loadSavedEvents()
@@ -136,6 +151,40 @@ class MainActivity : Activity() {
                         Toast.LENGTH_LONG
                     ).show()
                 }
+            }
+        }
+    }
+
+    private fun hasLocationPermission(): Boolean {
+    return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+
+        if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
+            val granted = hasLocationPermission()
+            val student = pendingStudent
+            val eventType = pendingEventType
+
+            pendingStudent = null
+            pendingEventType = null
+
+            if (granted && student != null && eventType != null) {
+                captureAndSaveEvent(student, eventType)
+            } else {
+                Toast.makeText(
+                    this,
+                    "Location permission is required for GPS capture.",
+                    Toast.LENGTH_LONG
+                ).show()
             }
         }
     }
