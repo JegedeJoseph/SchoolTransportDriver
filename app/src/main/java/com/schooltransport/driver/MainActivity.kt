@@ -190,85 +190,127 @@ class MainActivity : Activity() {
     }
 
     // Save a pickup or drop-off event permanently on the phone.
-private fun recordEvent(
-    student: DemoStudent,
-    eventType: String
-) {
-    if (!eventsLoaded || student.id in savingStudentIds) {
-        return
+    private fun recordEvent(student: DemoStudent, eventType: String) {
+        if (!eventsLoaded || student.id in savingStudentIds) return
+
+        if (eventType == "PICKUP" && student.pickedUp) return
+
+        if (eventType == "DROPOFF" &&
+            (!student.pickedUp || student.droppedOff)
+        ) return
+
+        if (!hasLocationPermission()) {
+            pendingStudent = student
+            pendingEventType = eventType
+
+            requestPermissions(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ),
+                LOCATION_PERMISSION_REQUEST_CODE
+            )
+            return
+        }
+
+        captureAndSaveEvent(student, eventType)
     }
 
-    if (eventType == "PICKUP" && student.pickedUp) {
-        return
-    }
-
-    if (eventType == "DROPOFF" &&
-        (!student.pickedUp || student.droppedOff)
+    private fun captureAndSaveEvent(
+        student: DemoStudent,
+        eventType: String
     ) {
-        return
-    }
+        if (student.id in savingStudentIds) return
 
-    savingStudentIds.add(student.id)
-    renderScreen()
-
-    databaseScope.launch {
+        savingStudentIds.add(student.id)
+        renderScreen()
 
         try {
-            val event = DriverEvent(
-                studentId = student.id,
-                studentName = student.name,
-                eventType = eventType,
-                latitude = null,
-                longitude = null,
-                gpsAccuracy = null,
-                eventTimestamp = System.currentTimeMillis(),
-                syncStatus = "PENDING"
-            )
+            val cancellationTokenSource = CancellationTokenSource()
 
-            val dao = driverDatabase.driverEventDao()
+            fusedLocationClient.getCurrentLocation(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                cancellationTokenSource.token
+            ).addOnSuccessListener { location ->
 
-            dao.insertEvent(event)
+                saveEventToDatabase(student, eventType, location)
 
-            val pendingCount = dao.getPendingCount()
+            }.addOnFailureListener {
 
-            runOnUiThread {
+                saveEventToDatabase(student, eventType, null)
 
-                savingStudentIds.remove(student.id)
-
-                if (eventType == "PICKUP") {
-                    student.pickedUp = true
-                } else {
-                    student.droppedOff = true
-                }
-
-                pendingEventCount = pendingCount
-
-                Toast.makeText(
-                    this@MainActivity,
-                    "$eventType saved on this phone",
-                    Toast.LENGTH_SHORT
-                ).show()
-
-                renderScreen()
             }
 
-        } catch (exception: Exception) {
+        } catch (exception: SecurityException) {
+            saveEventToDatabase(student, eventType, null)
+        }
+    }
 
-            runOnUiThread {
+            private fun saveEventToDatabase(
+        student: DemoStudent,
+        eventType: String,
+        location: Location?
+    ) {
+        databaseScope.launch {
+            try {
+                val event = DriverEvent(
+                    studentId = student.id,
+                    studentName = student.name,
+                    eventType = eventType,
+                    latitude = location?.latitude,
+                    longitude = location?.longitude,
+                    gpsAccuracy = location?.accuracy,
+                    eventTimestamp = System.currentTimeMillis(),
+                    syncStatus = "PENDING"
+                )
 
-                savingStudentIds.remove(student.id)
+                val dao = driverDatabase.driverEventDao()
 
-                Toast.makeText(
-                    this@MainActivity,
-                    "Could not save event: ${exception.message}",
-                    Toast.LENGTH_LONG
-                ).show()
+                dao.insertEvent(event)
 
-                renderScreen()
+                val pendingCount = dao.getPendingCount()
+
+                runOnUiThread {
+                    savingStudentIds.remove(student.id)
+
+                    if (eventType == "PICKUP") {
+                        student.pickedUp = true
+                    } else {
+                        student.droppedOff = true
+                    }
+
+                    pendingEventCount = pendingCount
+
+                    val message = if (location != null) {
+                        "$eventType saved with GPS location"
+                    } else {
+                        "$eventType saved, but GPS location unavailable"
+                    }
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        message,
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    renderScreen()
+                }
+
+            } catch (exception: Exception) {
+                runOnUiThread {
+                    savingStudentIds.remove(student.id)
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Could not save event: ${exception.message}",
+                        Toast.LENGTH_LONG
+                    ).show()
+
+                    renderScreen()
+                }
             }
         }
     }
-}
 
     private fun renderScreen() {
 
