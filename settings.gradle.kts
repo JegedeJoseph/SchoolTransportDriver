@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "SchoolTransportDriver"
+rootProject.name = "School Transport System"
 include(":app")
