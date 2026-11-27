@@ -193,7 +193,6 @@ class MainActivity : Activity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-
         if (requestCode == LOCATION_PERMISSION_REQUEST_CODE) {
             val granted = hasLocationPermission()
             val student = pendingStudent
@@ -379,7 +378,22 @@ class MainActivity : Activity() {
 
                 val dao = driverDatabase.driverEventDao()
 
-                dao.insertEvent(event)
+                val insertedId = dao.insertEvent(event)
+
+                if (insertedId == -1L) {
+                    runOnUiThread {
+                        savingStudentIds.remove(student.id)
+
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Duplicate blocked: this event has already been recorded today",
+                            Toast.LENGTH_LONG
+                        ).show()
+
+                        renderScreen()
+                    }
+                    return@launch
+                }
 
                 val pendingCount = dao.getPendingCount()
 
@@ -402,7 +416,6 @@ class MainActivity : Activity() {
 
                     renderScreen()
                 }
-
             } catch (exception: Exception) {
                 runOnUiThread {
                     savingStudentIds.remove(student.id)
@@ -418,6 +431,7 @@ class MainActivity : Activity() {
             }
         }
     }
+
 
     private fun renderScreen() {
 
