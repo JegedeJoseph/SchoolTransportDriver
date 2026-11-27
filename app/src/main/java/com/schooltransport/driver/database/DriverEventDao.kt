@@ -1,14 +1,16 @@
+
 package com.schooltransport.driver.database
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 
 @Dao
 interface DriverEventDao {
 
-    @Insert
-    suspend fun insertEvent(event: DriverEvent)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertEvent(event: DriverEvent): Long
 
     @Query("SELECT * FROM driver_events ORDER BY eventTimestamp DESC")
     suspend fun getAllEvents(): List<DriverEvent>
@@ -21,4 +23,11 @@ interface DriverEventDao {
 
     @Query("SELECT COUNT(*) FROM driver_events WHERE syncStatus = 'PENDING'")
     suspend fun getPendingCount(): Int
+
+    @Query("""
+        SELECT * FROM driver_events
+        WHERE serviceDate = :serviceDate
+        ORDER BY eventTimestamp DESC
+    """)
+    suspend fun getEventsForDate(serviceDate: String): List<DriverEvent>
 }

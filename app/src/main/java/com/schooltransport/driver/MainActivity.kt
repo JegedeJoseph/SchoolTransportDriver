@@ -27,6 +27,7 @@ import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
+import java.time.LocalDate
 
 class MainActivity : Activity() {
 
@@ -135,48 +136,47 @@ class MainActivity : Activity() {
 
     // Restore student statuses from saved database events.
     private fun loadSavedEvents() {
+        databaseScope.launch {
+            try {
+                val dao = driverDatabase.driverEventDao()
 
-    databaseScope.launch {
-        try {
-            val dao = driverDatabase.driverEventDao()
+                val events = dao.getEventsForDate(LocalDate.now().toString())
+                val pendingCount = dao.getPendingCount()
 
-            val events = dao.getAllEvents()
-            val pendingCount = dao.getPendingCount()
-
-            runOnUiThread {
-
-                students.forEach { student ->
-                    student.pickedUp = false
-                    student.droppedOff = false
-
-                    val studentEvents = events.filter {
-                        it.studentId == student.id
-                    }
-
-                    student.pickedUp = studentEvents.any {
-                        it.eventType == "PICKUP"
-                    }
-
-                    student.droppedOff = studentEvents.any {
-                        it.eventType == "DROPOFF"
-                    }
-                }
-
-                pendingEventCount = pendingCount
-                eventsLoaded = true
-
-                renderScreen()
-            }
-        }   
-            catch (exception: Exception) {
                 runOnUiThread {
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Could not load saved events: ${exception.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
+
+                    students.forEach { student ->
+                        student.pickedUp = false
+                        student.droppedOff = false
+
+                        val studentEvents = events.filter {
+                            it.studentId == student.id
+                        }
+
+                        student.pickedUp = studentEvents.any {
+                            it.eventType == "PICKUP"
+                        }
+
+                        student.droppedOff = studentEvents.any {
+                            it.eventType == "DROPOFF"
+                        }
+                    }
+
+                    pendingEventCount = pendingCount
+                    eventsLoaded = true
+
+                    renderScreen()
                 }
-            }
+            }   
+                catch (exception: Exception) {
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Could not load saved events: ${exception.message}",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
         }
     }
 
@@ -373,6 +373,7 @@ class MainActivity : Activity() {
                     longitude = location?.longitude,
                     gpsAccuracy = location?.accuracy,
                     eventTimestamp = System.currentTimeMillis(),
+                    serviceDate = LocalDate.now().toString(),
                     syncStatus = "PENDING"
                 )
 
