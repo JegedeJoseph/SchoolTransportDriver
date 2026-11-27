@@ -15,7 +15,11 @@ import com.schooltransport.driver.database.DriverDatabase
 import com.schooltransport.driver.database.DriverEvent
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class MainActivity : Activity() {
 
@@ -45,7 +49,8 @@ class MainActivity : Activity() {
 
     private lateinit var driverDatabase: DriverDatabase
 
-    private val databaseExecutor = Executors.newSingleThreadExecutor()
+    private val databaseScope =
+    CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val savingStudentIds = mutableSetOf<String>()
 
@@ -91,50 +96,42 @@ class MainActivity : Activity() {
     // Restore student statuses from saved database events.
     private fun loadSavedEvents() {
 
-        databaseExecutor.execute {
-            try {
-                val events = driverDatabase
-                    .driverEventDao()
-                    .getAllEvents()
+    databaseScope.launch {
+        try {
+            val dao = driverDatabase.driverEventDao()
 
-                val pendingCount = driverDatabase
-                    .driverEventDao()
-                    .getPendingCount()
+            val events = dao.getAllEvents()
+            val pendingCount = dao.getPendingCount()
 
-                runOnUiThread {
+            runOnUiThread {
 
-                    students.forEach { student ->
-                        student.pickedUp = false
-                        student.droppedOff = false
+                students.forEach { student ->
+                    student.pickedUp = false
+                    student.droppedOff = false
 
-                        val studentEvents = events.filter {
-                            it.studentId == student.id
-                        }
-
-                        if (studentEvents.any {
-                                it.eventType == "PICKUP"
-                            }) {
-                            student.pickedUp = true
-                        }
-
-                        if (studentEvents.any {
-                                it.eventType == "DROPOFF"
-                            }) {
-                            student.droppedOff = true
-                        }
+                    val studentEvents = events.filter {
+                        it.studentId == student.id
                     }
 
-                    pendingEventCount = pendingCount
-                    eventsLoaded = true
+                    student.pickedUp = studentEvents.any {
+                        it.eventType == "PICKUP"
+                    }
 
-                    renderScreen()
+                    student.droppedOff = studentEvents.any {
+                        it.eventType == "DROPOFF"
+                    }
                 }
 
-            } catch (exception: Exception) {
+                pendingEventCount = pendingCount
+                eventsLoaded = true
 
+                renderScreen()
+            }
+        }   
+            catch (exception: Exception) {
                 runOnUiThread {
                     Toast.makeText(
-                        this,
+                        this@MainActivity,
                         "Could not load saved events: ${exception.message}",
                         Toast.LENGTH_LONG
                     ).show()
@@ -144,88 +141,85 @@ class MainActivity : Activity() {
     }
 
     // Save a pickup or drop-off event permanently on the phone.
-    private fun recordEvent(
-        student: DemoStudent,
-        eventType: String
+private fun recordEvent(
+    student: DemoStudent,
+    eventType: String
+) {
+    if (!eventsLoaded || student.id in savingStudentIds) {
+        return
+    }
+
+    if (eventType == "PICKUP" && student.pickedUp) {
+        return
+    }
+
+    if (eventType == "DROPOFF" &&
+        (!student.pickedUp || student.droppedOff)
     ) {
+        return
+    }
 
-        if (!eventsLoaded || student.id in savingStudentIds) {
-            return
-        }
+    savingStudentIds.add(student.id)
+    renderScreen()
 
-        if (eventType == "PICKUP" && student.pickedUp) {
-            return
-        }
+    databaseScope.launch {
 
-        if (eventType == "DROPOFF" &&
-            (!student.pickedUp || student.droppedOff)
-        ) {
-            return
-        }
+        try {
+            val event = DriverEvent(
+                studentId = student.id,
+                studentName = student.name,
+                eventType = eventType,
+                latitude = null,
+                longitude = null,
+                gpsAccuracy = null,
+                eventTimestamp = System.currentTimeMillis(),
+                syncStatus = "PENDING"
+            )
 
-        savingStudentIds.add(student.id)
-        renderScreen()
+            val dao = driverDatabase.driverEventDao()
 
-        val event = DriverEvent(
-            studentId = student.id,
-            studentName = student.name,
-            eventType = eventType,
-            latitude = null,
-            longitude = null,
-            gpsAccuracy = null,
-            eventTimestamp = System.currentTimeMillis(),
-            syncStatus = "PENDING"
-        )
+            dao.insertEvent(event)
 
-        databaseExecutor.execute {
+            val pendingCount = dao.getPendingCount()
 
-            try {
-                driverDatabase
-                    .driverEventDao()
-                    .insertEvent(event)
+            runOnUiThread {
 
-                val pendingCount = driverDatabase
-                    .driverEventDao()
-                    .getPendingCount()
+                savingStudentIds.remove(student.id)
 
-                runOnUiThread {
-
-                    savingStudentIds.remove(student.id)
-
-                    if (eventType == "PICKUP") {
-                        student.pickedUp = true
-                    } else {
-                        student.droppedOff = true
-                    }
-
-                    pendingEventCount = pendingCount
-
-                    Toast.makeText(
-                        this,
-                        "$eventType saved on this phone",
-                        Toast.LENGTH_SHORT
-                    ).show()
-
-                    renderScreen()
+                if (eventType == "PICKUP") {
+                    student.pickedUp = true
+                } else {
+                    student.droppedOff = true
                 }
 
-            } catch (exception: Exception) {
+                pendingEventCount = pendingCount
 
-                runOnUiThread {
+                Toast.makeText(
+                    this@MainActivity,
+                    "$eventType saved on this phone",
+                    Toast.LENGTH_SHORT
+                ).show()
 
-                    savingStudentIds.remove(student.id)
+                renderScreen()
+            }
 
-                    Toast.makeText(
-                        this,
-                        "Could not save event: ${exception.message}",
-                        Toast.LENGTH_LONG
-                    ).show()
+        } catch (exception: Exception) {
 
-                    renderScreen()
-                }
+            runOnUiThread {
+
+                savingStudentIds.remove(student.id)
+
+                Toast.makeText(
+                    this@MainActivity,
+                    "Could not save event: ${exception.message}",
+                    Toast.LENGTH_LONG
+                ).show()
+
+                renderScreen()
             }
         }
     }
+}
 
     private fun renderScreen() {
 
@@ -417,4 +411,9 @@ class MainActivity : Activity() {
     private fun dp(value: Int): Int {
         return (value * resources.displayMetrics.density).toInt()
     }
+
+    override fun onDestroy() {
+    super.onDestroy()
+    databaseScope.cancel()
+}
 }
