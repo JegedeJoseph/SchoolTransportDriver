@@ -36,11 +36,13 @@ class MainActivity : Activity() {
     }
 
     private data class DemoStudent(
-        val id: String,
-        val name: String,
-        var pickedUp: Boolean = false,
-        var droppedOff: Boolean = false
-    )
+    val id: String,
+    val name: String,
+    val homeLatitude: Double,
+    val homeLongitude: Double,
+    var pickedUp: Boolean = false,
+    var droppedOff: Boolean = false
+)
 
     // Default school closing time: 2:00 PM.
     // Owner-configurable settings will be added separately.
@@ -49,10 +51,25 @@ class MainActivity : Activity() {
     private var tripMode = TripMode.MORNING_PICKUP
 
     private val students = mutableListOf(
-        DemoStudent("DEMO_001", "Demo Student 01"),
-        DemoStudent("DEMO_002", "Demo Student 02"),
-        DemoStudent("DEMO_003", "Demo Student 03")
+    DemoStudent(
+        "DEMO_001",
+        "Demo Student 01",
+        6.5244,
+        3.3792
+    ),
+    DemoStudent(
+        "DEMO_002",
+        "Demo Student 02",
+        6.5244,
+        3.3792
+    ),
+    DemoStudent(
+        "DEMO_003",
+        "Demo Student 03",
+        6.5244,
+        3.3792
     )
+)
 
     private lateinit var driverDatabase: DriverDatabase
 
@@ -79,6 +96,10 @@ class MainActivity : Activity() {
 
     private var pendingStudent: DemoStudent? = null
     private var pendingEventType: String? = null
+
+    private val maxGpsAccuracyMeters = 30f
+    private val geofenceRadiusMeters = 100f
+    private val maxLocationAgeMillis = 30_000L
 
     private val timeFormatter =
         DateTimeFormatter.ofPattern("h:mm a")
@@ -189,6 +210,48 @@ class MainActivity : Activity() {
         }
     }
 
+    private fun validateLocation(
+        student: DemoStudent,
+        location: Location
+    ): String? {
+
+        // Reject a location without accuracy information.
+        if (!location.hasAccuracy()) {
+            return "GPS accuracy information is unavailable."
+        }
+
+        // Reject poor GPS accuracy.
+        if (location.accuracy > maxGpsAccuracyMeters) {
+            return "GPS accuracy is too poor (${location.accuracy.toInt()}m). Move to an open area and retry."
+        }
+
+        // Reject stale or invalid timestamps.
+        val locationAge = System.currentTimeMillis() - location.time
+
+        if (locationAge < 0 || locationAge > maxLocationAgeMillis) {
+            return "GPS location is outdated. Please retry."
+        }
+
+        // Calculate distance from the student's approved home location.
+        val distanceResults = FloatArray(1)
+
+        Location.distanceBetween(
+            location.latitude,
+            location.longitude,
+            student.homeLatitude,
+            student.homeLongitude,
+            distanceResults
+        )
+
+        val distanceFromHome = distanceResults[0]
+
+        if (distanceFromHome > geofenceRadiusMeters) {
+            return "You are ${distanceFromHome.toInt()}m from the pickup location. Move within ${geofenceRadiusMeters.toInt()}m and retry."
+        }
+
+        return null
+    }
+
     // Save a pickup or drop-off event permanently on the phone.
     private fun recordEvent(student: DemoStudent, eventType: String) {
         if (!eventsLoaded || student.id in savingStudentIds) return
@@ -233,20 +296,58 @@ class MainActivity : Activity() {
                 cancellationTokenSource.token
             ).addOnSuccessListener { location ->
 
+                if (location == null) {
+                    rejectLocationEvent(
+                        student,
+                        "GPS location unavailable. Move to an open area and retry."
+                    )
+                    return@addOnSuccessListener
+                }
+
+                val validationError = validateLocation(student, location)
+
+                if (validationError != null) {
+                    rejectLocationEvent(student, validationError)
+                    return@addOnSuccessListener
+                }
+
+                // Only a location that passes validation is saved.
                 saveEventToDatabase(student, eventType, location)
 
-            }.addOnFailureListener {
+            }.addOnFailureListener { exception ->
 
-                saveEventToDatabase(student, eventType, null)
-
+                rejectLocationEvent(
+                    student,
+                    "Could not obtain GPS location: ${exception.message}"
+                )
             }
 
         } catch (exception: SecurityException) {
-            saveEventToDatabase(student, eventType, null)
+            rejectLocationEvent(
+                student,
+                "Location permission was denied."
+            )
         }
     }
 
-            private fun saveEventToDatabase(
+    private fun rejectLocationEvent(
+        student: DemoStudent,
+        message: String
+    ) {
+        runOnUiThread {
+            savingStudentIds.remove(student.id)
+
+            Toast.makeText(
+                this@MainActivity,
+                message,
+                Toast.LENGTH_LONG
+            ).show()
+
+            renderScreen()
+        }
+    }
+
+    private fun saveEventToDatabase(
         student: DemoStudent,
         eventType: String,
         location: Location?
@@ -281,15 +382,9 @@ class MainActivity : Activity() {
 
                     pendingEventCount = pendingCount
 
-                    val message = if (location != null) {
-                        "$eventType saved with GPS location"
-                    } else {
-                        "$eventType saved, but GPS location unavailable"
-                    }
-
                     Toast.makeText(
                         this@MainActivity,
-                        message,
+                        "$eventType saved with GPS location",
                         Toast.LENGTH_LONG
                     ).show()
 
