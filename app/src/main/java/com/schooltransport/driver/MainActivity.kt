@@ -3,10 +3,16 @@ package com.schooltransport.driver
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
+import android.view.View
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -43,7 +49,7 @@ class MainActivity : Activity() {
     val homeLongitude: Double,
     var pickedUp: Boolean = false,
     var droppedOff: Boolean = false
-)
+    )
 
     // Default school closing time: 2:00 PM.
     // Owner-configurable settings will be added separately.
@@ -434,36 +440,150 @@ class MainActivity : Activity() {
 
 
     private fun renderScreen() {
+        val scrollView = ScrollView(this).apply {
+            setBackgroundColor(DesignSystem.SKY_TINT_BG)
+        }
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(20), dp(20), dp(24))
+            setPadding(dp(16), dp(16), dp(16), dp(24))
         }
-
-        val scrollView = ScrollView(this).apply {
-            addView(content)
-        }
-
+        scrollView.addView(content)
         setContentView(scrollView)
 
-        addText(content, "School Transport Driver", 26f, true)
-        addText(content, "DEMO MODE — fictional data only", 14f, true)
+        // ==========================================
+        // 1. BRAND HERO HEADER (Sky Blue Gradient)
+        // ==========================================
+        val heroHeader = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = DesignSystem.createGradientHeader(
+                this@MainActivity,
+                DesignSystem.SKY_PRIMARY_DARK,
+                DesignSystem.SKY_PRIMARY,
+                16
+            )
+            elevation = dp(3).toFloat()
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, dp(14))
+            }
+        }
 
-        addText(content, "Assigned bus: Bus 01", 20f, true)
-        addText(content, "Route: Demo School Route", 16f, false)
-        addText(content, "Driver: Demo Driver", 16f, false)
+        val headerCategory = TextView(this).apply {
+            text = "SCHOOL TRANSPORT DRIVER"
+            textSize = 11f
+            setTextColor(Color.parseColor("#B3E5FC"))
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.08f
+        }
+        heroHeader.addView(headerCategory)
 
-        addText(content, "Today's Trip", 22f, true)
+        val appTitle = TextView(this).apply {
+            text = "Driver Portal"
+            textSize = 24f
+            setTextColor(DesignSystem.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(0, dp(4), 0, dp(8))
+        }
+        heroHeader.addView(appTitle)
 
+        val demoBadgeContainer = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val demoBadge = TextView(this).apply {
+            text = "DEMO MODE — fictional data only"
+            textSize = 11f
+            setTextColor(DesignSystem.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            background = DesignSystem.createPillBadge(
+                this@MainActivity,
+                Color.parseColor("#33FFFFFF"),
+                Color.TRANSPARENT,
+                0
+            )
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }
+        demoBadgeContainer.addView(demoBadge)
+        heroHeader.addView(demoBadgeContainer)
+        content.addView(heroHeader)
+
+        // ==========================================
+        // 2. ASSIGNED VEHICLE & ROUTE CARD
+        // ==========================================
+        val vehicleCard = createCardLayout()
+
+        val vehicleCardHeader = TextView(this).apply {
+            text = "ASSIGNED TRIP DETAILS"
+            textSize = 11f
+            setTextColor(DesignSystem.SKY_PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            letterSpacing = 0.06f
+            setPadding(0, 0, 0, dp(10))
+        }
+        vehicleCard.addView(vehicleCardHeader)
+
+        val busRow = createInfoRow("Assigned bus", "Bus 01", isHighlighted = true)
+        val routeRow = createInfoRow("Route", "Demo School Route", isHighlighted = false)
+        val driverRow = createInfoRow("Driver", "Demo Driver", isHighlighted = false)
+
+        vehicleCard.addView(busRow)
+        vehicleCard.addView(routeRow)
+        vehicleCard.addView(driverRow)
+        content.addView(vehicleCard)
+
+        // ==========================================
+        // 3. TODAY'S TRIP (MODE SELECTION) CARD
+        // ==========================================
+        val tripCard = createCardLayout()
+
+        val tripHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+
+        val tripTitle = TextView(this).apply {
+            text = "Today's Trip"
+            textSize = 18f
+            setTextColor(DesignSystem.TEXT_PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        tripHeaderRow.addView(tripTitle)
+
+        val closingTimeText = TextView(this).apply {
+            text = "School closes: ${schoolClosingTime.format(timeFormatter)}"
+            textSize = 12f
+            setTextColor(DesignSystem.TEXT_SECONDARY)
+        }
+        tripHeaderRow.addView(closingTimeText)
+        tripCard.addView(tripHeaderRow)
+
+        val tripSubtitle = TextView(this).apply {
+            text = "Select an active trip mode to manage student arrivals and departures."
+            textSize = 13f
+            setTextColor(DesignSystem.TEXT_SECONDARY)
+            setPadding(0, 0, 0, dp(12))
+        }
+        tripCard.addView(tripSubtitle)
+
+        // Morning Pickup button & action
         val pickupAvailable = isPickupAvailable()
-
+        val isMorningActive = tripMode == TripMode.MORNING_PICKUP
         val pickupButtonText = if (pickupAvailable) {
-            "Morning: Student Pickup"
+            "Morning: Student Pickup" + if (isMorningActive) "  ● ACTIVE" else ""
         } else {
             "Morning: Student Pickup (Closed at 12:00 PM)"
         }
 
-        addButton(content, pickupButtonText, pickupAvailable) {
+        val pickupButton = createSegmentButton(
+            text = pickupButtonText,
+            isActive = isMorningActive,
+            isEnabled = pickupAvailable
+        ) {
             if (isPickupAvailable()) {
                 tripMode = TripMode.MORNING_PICKUP
                 renderScreen()
@@ -475,23 +595,24 @@ class MainActivity : Activity() {
                 ).show()
             }
         }
+        tripCard.addView(pickupButton)
 
+        // Afternoon Drop-off button & action
         val dropoffAvailable = isDropoffAvailable()
-
+        val isAfternoonActive = tripMode == TripMode.AFTERNOON_DROPOFF
         val dropoffButtonText = if (dropoffAvailable) {
-            "Afternoon: Student Drop-off"
+            "Afternoon: Student Drop-off" + if (isAfternoonActive) "  ● ACTIVE" else ""
         } else {
             "Afternoon: Student Drop-off (Available at 2:00 PM)"
         }
 
-        addButton(
-            content,
-            dropoffButtonText,
-            dropoffAvailable
+        val dropoffButton = createSegmentButton(
+            text = dropoffButtonText,
+            isActive = isAfternoonActive,
+            isEnabled = dropoffAvailable
         ) {
             if (isDropoffAvailable()) {
                 tripMode = TripMode.AFTERNOON_DROPOFF
-        
                 renderScreen()
             } else {
                 Toast.makeText(
@@ -501,84 +622,486 @@ class MainActivity : Activity() {
                 ).show()
             }
         }
+        tripCard.addView(dropoffButton)
+        content.addView(tripCard)
 
-        addText(
-            content,
-            "School closing time: ${schoolClosingTime.format(timeFormatter)}",
-            15f,
-            false
-        )
-
+        // ==========================================
+        // 4. PROGRESS & SYNC METRICS CARD
+        // ==========================================
         val completed = if (tripMode == TripMode.MORNING_PICKUP) {
             students.count { it.pickedUp }
         } else {
             students.count { it.droppedOff }
         }
 
-        addText(
-            content,
-            "Progress: $completed / ${students.size} students",
-            18f,
-            true
-        )
+        val progressCard = createCardLayout()
 
-        addText(
-            content,
-            "Events waiting to sync: $pendingEventCount",
-            16f,
-            true
-        )
-
-        if (!eventsLoaded) {
-            addText(content, "Loading saved records...", 15f, false)
+        val progressHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(8))
         }
 
-        addText(content, "Student List", 22f, true)
+        val progressTitle = TextView(this).apply {
+            text = "Trip Progress"
+            textSize = 15f
+            setTextColor(DesignSystem.TEXT_PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        progressHeaderRow.addView(progressTitle)
 
-        students.forEach { student ->
+        val progressCount = TextView(this).apply {
+            text = "$completed / ${students.size} students"
+            textSize = 15f
+            setTextColor(DesignSystem.SKY_PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+        }
+        progressHeaderRow.addView(progressCount)
+        progressCard.addView(progressHeaderRow)
 
-            addText(content, student.name, 18f, true)
+        // Visual Progress Bar
+        val progressBarContainer = FrameLayout(this).apply {
+            background = DesignSystem.createPillBadge(
+                this@MainActivity,
+                DesignSystem.SKY_SURFACE_LIGHT,
+                Color.TRANSPARENT,
+                0
+            )
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(8)
+            ).apply {
+                setMargins(0, 0, 0, dp(12))
+            }
+        }
 
-            val status = when {
-                student.droppedOff -> "Dropped off"
-                student.pickedUp -> "Picked up — on bus"
-                else -> "Waiting for pickup"
+        val totalStudents = if (students.isNotEmpty()) students.size else 1
+        val progressRatio = (completed.toFloat() / totalStudents).coerceIn(0f, 1f)
+
+        val progressFill = View(this).apply {
+            background = DesignSystem.createPillBadge(
+                this@MainActivity,
+                DesignSystem.SKY_PRIMARY,
+                Color.TRANSPARENT,
+                0
+            )
+            val fillParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            post {
+                val measuredWidth = progressBarContainer.width
+                fillParams.width = (measuredWidth * progressRatio).toInt()
+                layoutParams = fillParams
+            }
+        }
+        progressBarContainer.addView(progressFill)
+        progressCard.addView(progressBarContainer)
+
+        // Sync & Loading Status Chips
+        val badgesRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val syncBadge = TextView(this).apply {
+            if (pendingEventCount > 0) {
+                text = "Events waiting to sync: $pendingEventCount"
+                setTextColor(DesignSystem.SYNC_PENDING_TEXT)
+                background = DesignSystem.createPillBadge(
+                    this@MainActivity,
+                    DesignSystem.SYNC_PENDING_BG,
+                    DesignSystem.SYNC_PENDING_BORDER,
+                    1
+                )
+            } else {
+                text = "Events synced"
+                setTextColor(DesignSystem.SYNC_OK_TEXT)
+                background = DesignSystem.createPillBadge(
+                    this@MainActivity,
+                    DesignSystem.SYNC_OK_BG,
+                    DesignSystem.SYNC_OK_BORDER,
+                    1
+                )
+            }
+            textSize = 12f
+            typeface = Typeface.DEFAULT_BOLD
+            setPadding(dp(10), dp(4), dp(10), dp(4))
+        }
+        badgesRow.addView(syncBadge)
+
+        if (!eventsLoaded) {
+            val loadingBadge = TextView(this).apply {
+                text = "Loading saved records..."
+                textSize = 12f
+                setTextColor(DesignSystem.SKY_PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                background = DesignSystem.createPillBadge(
+                    this@MainActivity,
+                    DesignSystem.SKY_SURFACE_LIGHT,
+                    DesignSystem.BORDER_SKY,
+                    1
+                )
+                setPadding(dp(10), dp(4), dp(10), dp(4))
+                layoutParams = LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    setMargins(dp(8), 0, 0, 0)
+                }
+            }
+            badgesRow.addView(loadingBadge)
+        }
+        progressCard.addView(badgesRow)
+        content.addView(progressCard)
+
+        // ==========================================
+        // 5. STUDENT ROSTER LIST
+        // ==========================================
+        val listHeaderRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, dp(6), 0, dp(10))
+        }
+
+        val listTitle = TextView(this).apply {
+            text = "Student List"
+            textSize = 18f
+            setTextColor(DesignSystem.TEXT_PRIMARY)
+            typeface = Typeface.DEFAULT_BOLD
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        listHeaderRow.addView(listTitle)
+
+        val listCountBadge = TextView(this).apply {
+            text = "${students.size} Total"
+            textSize = 12f
+            setTextColor(DesignSystem.TEXT_SECONDARY)
+            background = DesignSystem.createPillBadge(
+                this@MainActivity,
+                DesignSystem.WHITE,
+                DesignSystem.BORDER_LIGHT,
+                1
+            )
+            setPadding(dp(8), dp(3), dp(8), dp(3))
+        }
+        listHeaderRow.addView(listCountBadge)
+        content.addView(listHeaderRow)
+
+        students.forEachIndexed { index, student ->
+            val studentCard = createCardLayout()
+
+            // Top Row: Avatar + Name/ID + Status Badge
+            val topRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(0, 0, 0, dp(12))
             }
 
-            addText(content, "Status: $status", 15f, false)
+            val avatar = TextView(this).apply {
+                text = String.format("%02d", index + 1)
+                textSize = 13f
+                setTextColor(DesignSystem.SKY_PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+                gravity = Gravity.CENTER
+                background = DesignSystem.createCircleDrawable(
+                    this@MainActivity,
+                    DesignSystem.SKY_SURFACE_LIGHT,
+                    DesignSystem.BORDER_SKY,
+                    1
+                )
+                layoutParams = LinearLayout.LayoutParams(dp(36), dp(36))
+            }
+            topRow.addView(avatar)
 
+            val studentInfo = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(10), 0, dp(8), 0)
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+
+            val studentName = TextView(this).apply {
+                text = student.name
+                textSize = 16f
+                setTextColor(DesignSystem.TEXT_PRIMARY)
+                typeface = Typeface.DEFAULT_BOLD
+            }
+            studentInfo.addView(studentName)
+
+            val studentId = TextView(this).apply {
+                text = "ID: ${student.id}"
+                textSize = 12f
+                setTextColor(DesignSystem.TEXT_TERTIARY)
+            }
+            studentInfo.addView(studentId)
+            topRow.addView(studentInfo)
+
+            // Status Badge
+            val statusBadge = TextView(this).apply {
+                when {
+                    student.droppedOff -> {
+                        text = "Dropped off"
+                        setTextColor(DesignSystem.STATUS_DROPOFF_TEXT)
+                        background = DesignSystem.createPillBadge(
+                            this@MainActivity,
+                            DesignSystem.STATUS_DROPOFF_BG,
+                            DesignSystem.STATUS_DROPOFF_BORDER,
+                            1
+                        )
+                    }
+                    student.pickedUp -> {
+                        text = "Picked up — on bus"
+                        setTextColor(DesignSystem.STATUS_PICKUP_TEXT)
+                        background = DesignSystem.createPillBadge(
+                            this@MainActivity,
+                            DesignSystem.STATUS_PICKUP_BG,
+                            DesignSystem.STATUS_PICKUP_BORDER,
+                            1
+                        )
+                    }
+                    else -> {
+                        text = "Waiting for pickup"
+                        setTextColor(DesignSystem.STATUS_WAITING_TEXT)
+                        background = DesignSystem.createPillBadge(
+                            this@MainActivity,
+                            DesignSystem.STATUS_WAITING_BG,
+                            DesignSystem.STATUS_WAITING_BORDER,
+                            1
+                        )
+                    }
+                }
+                textSize = 11f
+                typeface = Typeface.DEFAULT_BOLD
+                setPadding(dp(8), dp(4), dp(8), dp(4))
+            }
+            topRow.addView(statusBadge)
+            studentCard.addView(topRow)
+
+            // Action Button
             val isSaving = student.id in savingStudentIds
 
             if (tripMode == TripMode.MORNING_PICKUP) {
+                val isButtonEnabled = eventsLoaded && !student.pickedUp && !isSaving
+                val buttonLabel = when {
+                    isSaving -> "Saving pickup..."
+                    student.pickedUp -> "✓ Pickup Confirmed"
+                    else -> "Confirm Pickup"
+                }
 
-                addButton(
-                    content,
-                    if (isSaving) "Saving pickup..." else "Confirm Pickup",
-                    eventsLoaded && !student.pickedUp && !isSaving
+                val actionButton = createActionButton(
+                    label = buttonLabel,
+                    isEnabled = isButtonEnabled,
+                    isCompleted = student.pickedUp && !isSaving
                 ) {
                     recordEvent(student, "PICKUP")
                 }
-
+                studentCard.addView(actionButton)
             } else {
-
-            addButton(
-                content,
-                if (isSaving) "Saving drop-off..." else "Confirm Drop-off",
-                eventsLoaded &&
-                    !student.droppedOff &&
-                    !isSaving
-            ) {
-                recordEvent(student, "DROPOFF")
+                val isButtonEnabled = eventsLoaded && !student.droppedOff && !isSaving
+                val buttonLabel = when {
+                    isSaving -> "Saving drop-off..."
+                    student.droppedOff -> "✓ Drop-off Confirmed"
+                    else -> "Confirm Drop-off"
                 }
+
+                val actionButton = createActionButton(
+                    label = buttonLabel,
+                    isEnabled = isButtonEnabled,
+                    isCompleted = student.droppedOff && !isSaving
+                ) {
+                    recordEvent(student, "DROPOFF")
+                }
+                studentCard.addView(actionButton)
+            }
+
+            content.addView(studentCard)
+        }
+
+        // ==========================================
+        // 6. SYSTEM INFO FOOTER CARD
+        // ==========================================
+        val footerCard = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = DesignSystem.createCardDrawable(
+                this@MainActivity,
+                DesignSystem.WHITE,
+                DesignSystem.BORDER_SKY,
+                1,
+                12
+            )
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, dp(4), 0, dp(16))
             }
         }
 
-        addText(
-            content,
-            "Events are saved locally. GPS verification and server synchronisation have not yet been implemented.",
-            14f,
-            false
-        )
+        val footerText = TextView(this).apply {
+            text = "Events are saved locally. GPS verification and server synchronisation have not yet been implemented."
+            textSize = 12f
+            setTextColor(DesignSystem.TEXT_SECONDARY)
+            setLineSpacing(dp(2).toFloat(), 1f)
+        }
+        footerCard.addView(footerText)
+        content.addView(footerCard)
+    }
+
+    // --- Modern UI Helper Functions ---
+
+    private fun createCardLayout(): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = DesignSystem.createCardDrawable(
+                this@MainActivity,
+                DesignSystem.WHITE,
+                DesignSystem.BORDER_LIGHT,
+                1,
+                14
+            )
+            elevation = dp(2).toFloat()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 0, 0, dp(12))
+            }
+        }
+    }
+
+    private fun createInfoRow(label: String, value: String, isHighlighted: Boolean): LinearLayout {
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(3), 0, dp(3))
+
+            val labelView = TextView(this@MainActivity).apply {
+                text = "$label: "
+                textSize = 14f
+                setTextColor(DesignSystem.TEXT_SECONDARY)
+            }
+            addView(labelView)
+
+            val valueView = TextView(this@MainActivity).apply {
+                text = value
+                textSize = 14f
+                setTextColor(if (isHighlighted) DesignSystem.TEXT_PRIMARY else DesignSystem.TEXT_SECONDARY)
+                if (isHighlighted) typeface = Typeface.DEFAULT_BOLD
+            }
+            addView(valueView)
+        }
+    }
+
+    private fun createSegmentButton(
+        text: String,
+        isActive: Boolean,
+        isEnabled: Boolean,
+        action: () -> Unit
+    ): View {
+        return Button(this).apply {
+            this.text = text
+            this.isEnabled = isEnabled
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+
+            if (!isEnabled) {
+                background = DesignSystem.createCardDrawable(
+                    this@MainActivity,
+                    DesignSystem.BTN_DISABLED_BG,
+                    Color.TRANSPARENT,
+                    0,
+                    10
+                )
+                setTextColor(DesignSystem.BTN_DISABLED_TEXT)
+            } else if (isActive) {
+                background = DesignSystem.createModernButton(
+                    this@MainActivity,
+                    DesignSystem.SKY_PRIMARY,
+                    DesignSystem.SKY_PRIMARY_DARK,
+                    10
+                ) as Drawable
+                setTextColor(DesignSystem.WHITE)
+                elevation = dp(2).toFloat()
+            } else {
+                background = DesignSystem.createModernButton(
+                    this@MainActivity,
+                    DesignSystem.WHITE,
+                    DesignSystem.SKY_SURFACE_LIGHT,
+                    10,
+                    DesignSystem.BORDER_SKY,
+                    1
+                ) as Drawable
+                setTextColor(DesignSystem.SKY_PRIMARY)
+            }
+
+            setOnClickListener { action() }
+
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44)
+            ).apply {
+                setMargins(0, dp(4), 0, dp(8))
+            }
+            layoutParams = params
+        }
+    }
+
+    private fun createActionButton(
+        label: String,
+        isEnabled: Boolean,
+        isCompleted: Boolean,
+        action: () -> Unit
+    ): View {
+        return Button(this).apply {
+            text = label
+            this.isEnabled = isEnabled
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+
+            if (isCompleted) {
+                background = DesignSystem.createCardDrawable(
+                    this@MainActivity,
+                    DesignSystem.BTN_COMPLETED_BG,
+                    DesignSystem.BORDER_LIGHT,
+                    1,
+                    10
+                )
+                setTextColor(DesignSystem.BTN_COMPLETED_TEXT)
+            } else if (!isEnabled) {
+                background = DesignSystem.createCardDrawable(
+                    this@MainActivity,
+                    DesignSystem.BTN_DISABLED_BG,
+                    Color.TRANSPARENT,
+                    0,
+                    10
+                )
+                setTextColor(DesignSystem.BTN_DISABLED_TEXT)
+            } else {
+                background = DesignSystem.createModernButton(
+                    this@MainActivity,
+                    DesignSystem.SKY_PRIMARY,
+                    DesignSystem.SKY_PRIMARY_DARK,
+                    10
+                ) as Drawable
+                setTextColor(DesignSystem.WHITE)
+                elevation = dp(2).toFloat()
+            }
+
+            setOnClickListener { action() }
+
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(44)
+            ).apply {
+                setMargins(0, dp(4), 0, 0)
+            }
+            layoutParams = params
+        }
     }
 
     private fun addText(
@@ -587,17 +1110,16 @@ class MainActivity : Activity() {
         size: Float,
         bold: Boolean
     ) {
-
         val view = TextView(this).apply {
             this.text = text
             textSize = size
-            setTextColor(Color.BLACK)
+            setTextColor(DesignSystem.TEXT_PRIMARY)
 
             if (bold) {
-                setTypeface(null, android.graphics.Typeface.BOLD)
+                setTypeface(null, Typeface.BOLD)
             }
 
-            setPadding(0, dp(8), 0, dp(8))
+            setPadding(0, dp(6), 0, dp(6))
         }
 
         parent.addView(
@@ -615,19 +1137,42 @@ class MainActivity : Activity() {
         enabled: Boolean = true,
         action: () -> Unit
     ) {
-
         val button = Button(this).apply {
             text = label
             isEnabled = enabled
+            textSize = 14f
+            typeface = Typeface.DEFAULT_BOLD
+            isAllCaps = false
+
+            if (!enabled) {
+                background = DesignSystem.createCardDrawable(
+                    this@MainActivity,
+                    DesignSystem.BTN_DISABLED_BG,
+                    Color.TRANSPARENT,
+                    0,
+                    10
+                )
+                setTextColor(DesignSystem.BTN_DISABLED_TEXT)
+            } else {
+                background = DesignSystem.createModernButton(
+                    this@MainActivity,
+                    DesignSystem.SKY_PRIMARY,
+                    DesignSystem.SKY_PRIMARY_DARK,
+                    10
+                ) as Drawable
+                setTextColor(DesignSystem.WHITE)
+                elevation = dp(2).toFloat()
+            }
+
             setOnClickListener { action() }
         }
 
         val params = LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        )
-
-        params.setMargins(0, dp(4), 0, dp(8))
+            dp(44)
+        ).apply {
+            setMargins(0, dp(4), 0, dp(8))
+        }
 
         parent.addView(button, params)
     }
